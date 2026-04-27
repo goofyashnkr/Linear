@@ -55,8 +55,9 @@ local isTriggerHeld = false
 local activePunchType = nil 
 local sprintInputHeld = false 
 local isStomping = false
-local AutoWeaveConnection = nil
 local TP_SPEED = 70
+local AutoWeaveConnection = nil
+local startAutoWeave, stopAutoWeave
 
 local punchIDs = {
     ["rbxassetid://18312333191"] = "P1", ["rbxassetid://18312335714"] = "P2",
@@ -221,21 +222,15 @@ local function AddSlider(parent, text, key, min, max, manualCap)
     table.insert(UIObjects, {type = "Slider", key = key, min = min, max = max, valInput = valInput, sFill = sFill})
 end
 
-local function AddToggle(parent, text, key)
+local function AddToggle(parent, text, key, onChanged)
     local btn = Instance.new("TextButton", parent); btn.Size = UDim2.new(1, 0, 0, 32); btn.TextColor3 = Color3.new(1,1,1); btn.Font = 17; btn.TextSize = 12; Instance.new("UICorner", btn)
     local function update() btn.Text = text..": "..(Settings[key] and "ON" or "OFF"); btn.BackgroundColor3 = Settings[key] and Settings.AccentColor or Color3.fromRGB(45,45,50) end
     btn.MouseButton1Click:Connect(function()
         Settings[key] = not Settings[key]
         update()
-        if key == "AutoWeaveEnabled" then
-            if Settings[key] then
-                startAutoWeave()
-            else
-                stopAutoWeave()
-            end
-        end
+        if onChanged then pcall(onChanged, Settings[key]) end
     end)
-    update()      
+    update()
     table.insert(UIObjects, {type = "Toggle", key = key, btn = btn, rawText = text})
 end
 
@@ -267,7 +262,7 @@ AddSlider(hTab, "Smart Box Transparency", "Off_Trans", 0, 1)
 
 -- STATS TAB
 AddToggle(sTab, "ANTI-STUN", "AntiWeave")
-AddToggle(sTab, "AUTO WEAVE", "AutoWeaveEnabled")
+AddToggle(sTab, "AUTO WEAVE", "AutoWeaveEnabled", function(state) if state then startAutoWeave() else stopAutoWeave() end end)
 AddSlider(sTab, "AutoWeave Speed", "AutoWeaveSpeed", 0.05, 2, 10)
 AddToggle(sTab, "PUNCH SPEED", "PunchEnabled")
 AddSlider(sTab, "Punch Speed", "PunchSpeed", 1, 10)
@@ -372,11 +367,7 @@ local function LoadConfigs()
                     else Settings[k] = v end
                 end
                 RefreshAllUI()
-                if Settings.AutoWeaveEnabled then
-                    startAutoWeave()
-                else
-                    stopAutoWeave()
-                end
+                if Settings.AutoWeaveEnabled then startAutoWeave() else stopAutoWeave() end
             end)
             dB.MouseButton1Click:Connect(function() delfile(file) f:Destroy() end)
         end
@@ -393,9 +384,6 @@ sBtn.MouseButton1Click:Connect(function()
     LoadConfigs()
 end)
 LoadConfigs()
-if Settings.AutoWeaveEnabled then
-    startAutoWeave()
-end
 
 -- ==================================================================
 -- DYNAMIC COLOR PICKER (HUE + BRIGHTNESS)
@@ -469,49 +457,6 @@ UserInputService.InputEnded:Connect(function(i)
     end
 end)
 
-local function stopAutoWeave()
-    if AutoWeaveConnection then
-        AutoWeaveConnection:Disconnect()
-        AutoWeaveConnection = nil
-    end
-end
-
-local function startAutoWeave()
-    stopAutoWeave()
-    if not Settings.AutoWeaveEnabled then return end
-
-    local RemoteArgs = {"Weave", [3] = true}
-    local MICRO_VARIATION = 0.00000000002
-    local elapsed = 0
-
-    AutoWeaveConnection = RunService.Heartbeat:Connect(function(dt)
-        if not Settings.AutoWeaveEnabled then
-            return
-        end
-
-        elapsed += dt
-        local char = LocalPlayer.Character
-        if not char then return end
-
-        local core = char:FindFirstChild("Core")
-        if not core then return end
-
-        local comm = core:FindFirstChild("Communicate")
-        if not comm then return end
-
-        local phonk = comm:FindFirstChild("") or comm:FindFirstChildWhichIsA("RemoteEvent")
-        if not phonk then return end
-
-        local interval = math.max(Settings.AutoWeaveSpeed + (math.random() - 0.005) * MICRO_VARIATION, 0.05)
-        while elapsed >= interval do
-            elapsed -= interval
-            pcall(function()
-                phonk:FireServer(table.unpack(RemoteArgs, 1, 3))
-            end)
-        end
-    end)
-end
-
 -- ==================================================================
 -- UTILITIES & CORE LOOPS
 -- ==================================================================
@@ -559,6 +504,62 @@ local function boostWeaveDistance(char)
 end
 if LocalPlayer.Character then boostWeaveDistance(LocalPlayer.Character) end
 LocalPlayer.CharacterAdded:Connect(boostWeaveDistance)
+
+if Settings.AutoWeaveEnabled then startAutoWeave() end
+
+local function stopAutoWeave()
+    if AutoWeaveConnection then
+        AutoWeaveConnection:Disconnect()
+        AutoWeaveConnection = nil
+    end
+end
+
+local function startAutoWeave()
+    stopAutoWeave()
+    if not Settings.AutoWeaveEnabled then return end
+
+    local LocalPlayer = Players.LocalPlayer
+    local RemoteArgs = { 'Weave', [3] = true }
+    local MICRO_VARIATION = 0.00000000002
+    local elapsed = 0
+
+    AutoWeaveConnection = RunService.Heartbeat:Connect(function(dt)
+        if not Settings.AutoWeaveEnabled then
+            return
+        end
+
+        elapsed += dt
+        local char = LocalPlayer.Character
+        if not char then
+            return
+        end
+
+        local core = char:FindFirstChild('Core')
+        if not core then
+            return
+        end
+
+        local comm = core:FindFirstChild('Communicate')
+        if not comm then
+            return
+        end
+
+        local phonk = comm:FindFirstChild('')
+        if not phonk then
+            return
+        end
+
+        local interval = Settings.AutoWeaveSpeed + (math.random() - 0.005) * MICRO_VARIATION
+        while elapsed >= interval do
+            elapsed -= interval
+            pcall(function()
+                phonk:FireServer(
+                    unpack(RemoteArgs, 1, 3)
+                )
+            end)
+        end
+    end)
+end
 
 RunService.Heartbeat:Connect(function(dt)
     local char = LocalPlayer.Character
