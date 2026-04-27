@@ -57,7 +57,6 @@ local sprintInputHeld = false
 local isStomping = false
 local TP_SPEED = 70
 local AutoWeaveConnection = nil
-local startAutoWeave, stopAutoWeave
 
 local punchIDs = {
     ["rbxassetid://18312333191"] = "P1", ["rbxassetid://18312335714"] = "P2",
@@ -69,6 +68,47 @@ local stompIDs = {
     ["rbxassetid://17837722603"] = true,
     ["rbxassetid://18362264385"] = true,
 }
+
+-- ==================================================================
+-- AUTO WEAVE LOGIC (INTEGRATED SNIPPET)
+-- ==================================================================
+local function stopAutoWeave()
+    if AutoWeaveConnection then
+        AutoWeaveConnection:Disconnect()
+        AutoWeaveConnection = nil
+    end
+end
+
+local function startAutoWeave()
+    stopAutoWeave()
+    if not Settings.AutoWeaveEnabled then return end
+
+    local elapsed = 0
+    local RemoteArgs = { 'Weave', [3] = true }
+
+    AutoWeaveConnection = RunService.Heartbeat:Connect(function(dt)
+        if not Settings.AutoWeaveEnabled then return end
+        elapsed += dt
+        
+        local char = LocalPlayer.Character
+        -- Using the specific pathing from your snippet
+        local phonk = char and char:FindFirstChild("Core")
+                      and char.Core:FindFirstChild("Communicate")
+                      and char.Core.Communicate:FindFirstChild("")
+
+        if phonk then
+            -- Exact Jitter Logic from original snippet
+            local interval = Settings.AutoWeaveSpeed + (math.random() - 0.005) * 0.00000000002
+            
+            while elapsed >= interval do
+                elapsed -= interval
+                pcall(function()
+                    phonk:FireServer(unpack(RemoteArgs, 1, 3))
+                end)
+            end
+        end
+    end)
+end
 
 -- ==================================================================
 -- GUI SETUP
@@ -182,7 +222,6 @@ local function AddSlider(parent, text, key, min, max, manualCap)
     valInput.TextSize = 12
     valInput.TextXAlignment = 2
     
-    -- Added 10px padding on left/right to prevent knob clipping
     local sBack = Instance.new("Frame", f)
     sBack.Size = UDim2.new(1, -20, 0, 4)
     sBack.Position = UDim2.new(0, 10, 0.75, 0) 
@@ -262,6 +301,7 @@ AddSlider(hTab, "Smart Box Transparency", "Off_Trans", 0, 1)
 
 -- STATS TAB
 AddToggle(sTab, "ANTI-STUN", "AntiWeave")
+-- Updated Toggle to use the snippet-based start/stop
 AddToggle(sTab, "AUTO WEAVE", "AutoWeaveEnabled", function(state) if state then startAutoWeave() else stopAutoWeave() end end)
 AddSlider(sTab, "AutoWeave Speed", "AutoWeaveSpeed", 0.05, 2, 10)
 AddToggle(sTab, "PUNCH SPEED", "PunchEnabled")
@@ -285,6 +325,7 @@ AddInput(cTab, "Target User", "TargetPlayer")
 AddSlider(cTab, "Target Size", "Target_HRP_Size", 1, 15)
 AddSlider(cTab, "Target Transparency", "Target_HRP_Trans", 0, 1)
 
+-- [Rest of your Original Script remains below for Skin Morphing, Hitbox Loops, and Keybinds]
 local mDiv = Instance.new("TextLabel", cTab); mDiv.Size = UDim2.new(1,0,0,25); mDiv.Text = "--- SKIN MORPHER ---"; mDiv.TextColor3 = Color3.new(0.6,0.6,0.6); mDiv.Font = 17; mDiv.TextSize = 10; mDiv.BackgroundTransparency = 1
 local mBox = Instance.new("TextBox", cTab); mBox.Size = UDim2.new(1,0,0,35); mBox.PlaceholderText = "Username to Morph..."; mBox.BackgroundColor3 = Color3.fromRGB(20,20,20); mBox.TextColor3 = Color3.new(1,1,1); Instance.new("UICorner", mBox)
 local mBtn = Instance.new("TextButton", cTab); mBtn.Size = UDim2.new(1,0,0,35); mBtn.Text = "LOCAL MORPH SKIN"; mBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 110); mBtn.TextColor3 = Color3.new(1,1,1); Instance.new("UICorner", mBtn)
@@ -507,60 +548,6 @@ LocalPlayer.CharacterAdded:Connect(boostWeaveDistance)
 
 if Settings.AutoWeaveEnabled then startAutoWeave() end
 
-local function stopAutoWeave()
-    if AutoWeaveConnection then
-        AutoWeaveConnection:Disconnect()
-        AutoWeaveConnection = nil
-    end
-end
-
-local function startAutoWeave()
-    stopAutoWeave()
-    if not Settings.AutoWeaveEnabled then return end
-
-    local LocalPlayer = Players.LocalPlayer
-    local RemoteArgs = { 'Weave', [3] = true }
-    local MICRO_VARIATION = 0.00000000002
-    local elapsed = 0
-
-    AutoWeaveConnection = RunService.Heartbeat:Connect(function(dt)
-        if not Settings.AutoWeaveEnabled then
-            return
-        end
-
-        elapsed += dt
-        local char = LocalPlayer.Character
-        if not char then
-            return
-        end
-
-        local core = char:FindFirstChild('Core')
-        if not core then
-            return
-        end
-
-        local comm = core:FindFirstChild('Communicate')
-        if not comm then
-            return
-        end
-
-        local phonk = comm:FindFirstChild('')
-        if not phonk then
-            return
-        end
-
-        local interval = Settings.AutoWeaveSpeed + (math.random() - 0.005) * MICRO_VARIATION
-        while elapsed >= interval do
-            elapsed -= interval
-            pcall(function()
-                phonk:FireServer(
-                    unpack(RemoteArgs, 1, 3)
-                )
-            end)
-        end
-    end)
-end
-
 RunService.Heartbeat:Connect(function(dt)
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -729,3 +716,4 @@ Players.PlayerRemoving:Connect(function(v)
     originalHRPProps[v] = nil
     removeSelectionBox(v)
 end)
+
