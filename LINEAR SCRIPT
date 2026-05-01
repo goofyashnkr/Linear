@@ -16,12 +16,12 @@ local Settings = {
     Target_HRP_Size = 6,
     Target_HRP_Trans = 0.5,
     Stomp_HRP_Size = 8,
-    Stomp_HRP_Trans = 0.7,
+    Stomp_HRP_Trans = 1,
     AI_Box_Enabled = false,
-    P1_Size = 6,
-    P2_Size = 7,
-    P3_Size = 8,
-    P4_Size = 10,
+    P1_Size = 5,
+    P2_Size = 5,
+    P3_Size = 5,
+    P4_Size = 5,
     Off_Size = 2,
     Off_Trans = 1,
     SolidToggle = false,
@@ -59,10 +59,35 @@ local TP_SPEED = 70
 local AutoWeaveConnection = nil
 
 local punchIDs = {
-    ["rbxassetid://18312333191"] = "P1", ["rbxassetid://18312335714"] = "P2",
-    ["rbxassetid://18312338197"] = "P3", ["rbxassetid://18312340119"] = "P4",
-    ["rbxassetid://18312344029"] = true, ["rbxassetid://18312346524"] = true,
-    ["rbxassetid://18312348771"] = true, ["rbxassetid://18312351760"] = true,
+    -- P1 IDs (First Punches)
+    ["rbxassetid://18312333191"] = "P1",
+    ["rbxassetid://17796387423"] = "P1",
+    ["rbxassetid://18237364901"] = "P1",
+    ["rbxassetid://17899828468"] = "P1",
+
+    -- P2 IDs (Second Punches)
+    ["rbxassetid://18312335714"] = "P2",
+    ["rbxassetid://17796396059"] = "P2",
+    ["rbxassetid://18237367437"] = "P2",
+    ["rbxassetid://17899831034"] = "P2",
+
+    -- P3 IDs (Third Punches)
+    ["rbxassetid://18312338197"] = "P3",
+    ["rbxassetid://17796400708"] = "P3",
+    ["rbxassetid://18237370141"] = "P3",
+    ["rbxassetid://17899833872"] = "P3",
+
+    -- P4 IDs (Fourth Punches / Finishers)
+    ["rbxassetid://18312340119"] = "P4",
+    ["rbxassetid://17796403834"] = "P4",
+    ["rbxassetid://18237372131"] = "P4",
+    ["rbxassetid://17899836330"] = "P4",
+
+    -- Boolean/Damage Toggle IDs
+    ["rbxassetid://18312344029"] = true, 
+    ["rbxassetid://18312346524"] = true,
+    ["rbxassetid://18312348771"] = true, 
+    ["rbxassetid://18312351760"] = true,
 }
 local stompIDs = {
     ["rbxassetid://17837722603"] = true,
@@ -330,52 +355,90 @@ local mDiv = Instance.new("TextLabel", cTab); mDiv.Size = UDim2.new(1,0,0,25); m
 local mBox = Instance.new("TextBox", cTab); mBox.Size = UDim2.new(1,0,0,35); mBox.PlaceholderText = "Username to Morph..."; mBox.BackgroundColor3 = Color3.fromRGB(20,20,20); mBox.TextColor3 = Color3.new(1,1,1); Instance.new("UICorner", mBox)
 local mBtn = Instance.new("TextButton", cTab); mBtn.Size = UDim2.new(1,0,0,35); mBtn.Text = "LOCAL MORPH SKIN"; mBtn.BackgroundColor3 = Color3.fromRGB(60, 40, 110); mBtn.TextColor3 = Color3.new(1,1,1); Instance.new("UICorner", mBtn)
 
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local currentConnection = nil -- This stores the "active" morph
+local morphActive = false     -- This tells the loop when to stop
+
 local function LocalMorph(targetUser)
+    -- 1. KILL any existing morph connection so they don't fight
+    if currentConnection then
+        currentConnection:Disconnect()
+        currentConnection = nil
+    end
+    morphActive = false 
+    task.wait(0.1) -- Short breather to let old loops die
+
     local targetId = nil
     pcall(function() targetId = Players:GetUserIdFromNameAsync(targetUser) end)
-    if not targetId then return end
-    local char = LocalPlayer.Character
-    if not char then return end
-    
-    for _, v in pairs(char:GetChildren()) do
-        if v:IsA("Accessory") or v:IsA("Shirt") or v:IsA("Pants") or v:IsA("BodyColors") or v:IsA("ShirtGraphic") then v:Destroy() end
-    end
-    
-    task.spawn(function()
-        local appearance = Players:GetCharacterAppearanceAsync(targetId)
-        for _, item in pairs(appearance:GetChildren()) do
-            if item:IsA("Shirt") or item:IsA("Pants") or item:IsA("BodyColors") then 
-                item.Parent = char
-            elseif item:IsA("Accessory") then
-                local handle = item:FindFirstChild("Handle")
-                if handle then
-                    local attach = handle:FindFirstChildOfClass("Attachment")
-                    if attach then
-                        local targetAttach = char:FindFirstChild(attach.Name, true)
-                        if targetAttach then
-                            item.Parent = char
-                            handle.CFrame = targetAttach.Parent.CFrame * targetAttach.CFrame * attach.CFrame:Inverse()
-                            handle.CanCollide = false
-                            handle.CanTouch = false
-                            handle.CanQuery = false
-                            for _, p in pairs(item:GetDescendants()) do
-                                if p:IsA("BasePart") then
-                                    p.CanCollide = false
-                                    p.CanTouch = false
-                                    p.CanQuery = false
-                                end
-                            end
-                            local weld = Instance.new("WeldConstraint")
-                            weld.Part0 = handle; weld.Part1 = targetAttach.Parent; weld.Parent = handle
+    if not targetId then warn("User not found") return end
+
+    morphActive = true
+
+    -- 2. The Morphing Function
+    local function executeMorphLogic(char)
+        if not morphActive then return end
+        
+        task.spawn(function()
+            local endTime = tick() + 5 -- Force for 5 seconds
+            
+            while tick() < endTime and char and char.Parent and morphActive do
+                local success, appearance = pcall(function() 
+                    return Players:GetCharacterAppearanceAsync(targetId) 
+                end)
+                
+                if success and appearance then
+                    -- WIPE existing items
+                    for _, v in pairs(char:GetChildren()) do
+                        if v:IsA("Accessory") or v:IsA("Shirt") or v:IsA("Pants") or v:IsA("BodyColors") or v:IsA("ShirtGraphic") then 
+                            v:Destroy() 
                         end
                     end
+                    
+                    -- APPLY Morph
+                    for _, item in pairs(appearance:GetChildren()) do
+                        if item:IsA("Shirt") or item:IsA("Pants") or item:IsA("BodyColors") then 
+                            item.Parent = char
+                        elseif item:IsA("Accessory") then
+                            local handle = item:FindFirstChild("Handle")
+                            if handle and handle:FindFirstChildOfClass("Attachment") then
+                                local attach = handle:FindFirstChildOfClass("Attachment")
+                                local targetAttach = char:FindFirstChild(attach.Name, true)
+                                if targetAttach then
+                                    item.Parent = char
+                                    handle.CFrame = targetAttach.Parent.CFrame * targetAttach.CFrame * attach.CFrame:Inverse()
+                                    handle.CanCollide = false
+                                    local weld = Instance.new("WeldConstraint")
+                                    weld.Part0 = handle; weld.Part1 = targetAttach.Parent; weld.Parent = handle
+                                end
+                            end
+                        elseif item:IsA("Decal") and item.Name == "face" then 
+                            if char:FindFirstChild("Head") then 
+                                if char.Head:FindFirstChild("face") then char.Head.face:Destroy() end
+                                item.Parent = char.Head 
+                            end 
+                        end
+                    end
+                    appearance:Destroy()
                 end
-            elseif item:IsA("Decal") and item.Name == "face" then 
-                if char:FindFirstChild("Head") then item.Parent = char.Head end 
+                task.wait(0.2)
             end
-        end
-    end)
+        end)
+    end
+
+    -- 3. Connect and Run
+    currentConnection = LocalPlayer.CharacterAdded:Connect(executeMorphLogic)
+    if LocalPlayer.Character then
+        executeMorphLogic(LocalPlayer.Character)
+    end
 end
+
+-- Usage:
+LocalMorph("")
+-- If you run LocalMorph("Roblox") now, it will STOP the Builderman loop automatically.
 mBtn.MouseButton1Click:Connect(function() LocalMorph(mBox.Text) end)
 
 local bBtn = Instance.new("TextButton", cTab); bBtn.Size = UDim2.new(1,0,0,32); bBtn.Text = "KEYBIND: "..Settings.MenuKey.Name; bBtn.BackgroundColor3 = Color3.fromRGB(35,35,40); bBtn.TextColor3 = Color3.new(1,1,1); Instance.new("UICorner", bBtn)
@@ -716,4 +779,3 @@ Players.PlayerRemoving:Connect(function(v)
     originalHRPProps[v] = nil
     removeSelectionBox(v)
 end)
-
